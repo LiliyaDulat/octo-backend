@@ -11,7 +11,6 @@ const OCTO_SECRET = process.env.OCTO_SECRET;
 
 app.post("/create-payment", async (req, res) => {
   const { amount, orderId } = req.body;
-
   const init_time = new Date().toISOString().slice(0, 19).replace("T", " ");
 
   const body = {
@@ -25,7 +24,7 @@ app.post("/create-payment", async (req, res) => {
     description: "Оплата через Octo",
     return_url: "https://example.com/success",
     notify_url: "https://example.com/notify",
-    test: true
+    test: true,
   };
 
   try {
@@ -37,17 +36,32 @@ app.post("/create-payment", async (req, res) => {
 
     const data = await response.json();
 
-    if (data && data.payment_url) {
-      res.json({ payment_url: data.payment_url });
-    } else {
-      res.status(400).json({ error: "Octo не вернул ссылку", raw: data });
+    // Пытаемся достать URL оплаты из всех возможных полей
+    const payUrl =
+      data.payment_url ||
+      data.octo_pay_url ||
+      (data.data && data.data.octo_pay_url);
+
+    if (payUrl) {
+      // Отдаем фронтенду единый ключ payment_url
+      return res.json({ payment_url: payUrl });
     }
+
+    // Если Octo вернул ошибку
+    if (data.error && data.error !== 0) {
+      return res
+        .status(400)
+        .json({ error: data.errMessage || data.errorMessage || "Ошибка Octo" });
+    }
+
+    // Неожиданный формат ответа
+    return res
+      .status(400)
+      .json({ error: "Octo вернул неожиданный ответ", raw: data });
   } catch (err) {
-    res.status(500).json({ error: "Ошибка сервера", details: err.message });
+    return res.status(500).json({ error: "Ошибка сервера", details: err.message });
   }
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server is running on port ${PORT}`));
